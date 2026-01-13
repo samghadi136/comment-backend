@@ -2,35 +2,42 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const Comment = require("./models/Comment");
-require("dotenv").config();   // <-- LOAD ENV
+require("dotenv").config();
 
 const app = express();
+
+// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
-// CONNECT MONGO
+// CONNECT MONGO (SAFE FOR RENDER)
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log("Mongo Error:", err));
+  .catch(err => {
+    console.error("Mongo Error:", err.message);
+    process.exit(1); // ⬅️ REQUIRED for Render
+  });
 
 // ADD COMMENT
 app.post("/comment", async (req, res) => {
-  const { text, city, userId } = req.body;
+  try {
+    const { text, city, userId } = req.body;
 
-  // allow any language, but block dangerous symbols only
-  const regex = /^[^<>$%{}]+$/;
+    const regex = /^[^<>$%{}]+$/;
+    if (!regex.test(text)) {
+      return res.status(400).json({
+        error: "Comment contains invalid or unsafe characters"
+      });
+    }
 
-  if (!regex.test(text)) {
-    return res.status(400).json({
-      error: "Comment contains invalid or unsafe characters"
-    });
+    const comment = new Comment({ text, city, userId });
+    await comment.save();
+    res.json(comment);
+
+  } catch (err) {
+    res.status(500).json({ error: "Server error" });
   }
-
-  const comment = new Comment({ text, city, userId });
-  await comment.save();
-
-  res.json(comment);
 });
 
 // GET COMMENTS
@@ -47,7 +54,7 @@ app.post("/comment/like/:id", async (req, res) => {
   res.json(comment);
 });
 
-// DISLIKE (auto delete after 2)
+// DISLIKE
 app.post("/comment/dislike/:id", async (req, res) => {
   const comment = await Comment.findById(req.params.id);
   comment.dislikes++;
@@ -63,11 +70,6 @@ app.post("/comment/dislike/:id", async (req, res) => {
 
 // SERVER
 const PORT = process.env.PORT || 5000;
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-const cors = require("cors");
-app.use(cors());
-
